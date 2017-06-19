@@ -503,22 +503,22 @@ public class Doc_Invoice extends Doc
 				boolean landedCost = landedCost(as, fact, line, true);
 				if (landedCost && as.isExplicitCostAdjustment())
 				{
-					fact.createLine (line, line.getAccount(ProductCost.ACCTTYPE_P_Expense, as),
-						getC_Currency_ID(), line.getAmtSource(), null);
-					//
-					FactLine fl = fact.createLine (line, line.getAccount(ProductCost.ACCTTYPE_P_Expense, as),
-						getC_Currency_ID(), null, line.getAmtSource());
 					String desc = line.getDescription();
 					if (desc == null)
-						desc = "100% de factura " + invoice.getDocumentNo() + line.getLine()  ;
+						desc = "Factura " + invoice.getDocumentNo() + line.getLine()  ;
 					else
-						desc += "100% de factura " + invoice.getDocumentNo() + line.getLine()  ;
+						desc += "Factura " + invoice.getDocumentNo() + line.getLine()  ;
+					FactLine fl =fact.createLine (line, line.getAccount(ProductCost.ACCTTYPE_P_Expense, as),
+							getC_Currency_ID(), line.getAmtSource(), null);					//
+					fl.setDescription(desc);
+					fl = fact.createLine (line, line.getAccount(ProductCost.ACCTTYPE_P_Expense, as),
+							getC_Currency_ID(), null, line.getAmtSource());
 					fl.setDescription(desc);
 					MLandedCostAllocation[] landedCostAllocations = MLandedCostAllocation.getOfInvoiceLine(
 							getCtx(),  line.get_ID(), getTrxName());
 					if (landedCostAllocations.length >0)
 						fl.setDateAcct(landedCostAllocations[0].getDateAcct());
-						fl.set_ValueOfColumn("isCostDistribution", true);
+					fl.set_ValueOfColumn("isCostDistribution", true);
 				}
 				if (!landedCost)
 				{
@@ -854,7 +854,7 @@ public class Doc_Invoice extends Doc
 			String desc = invoiceLine.getDescription();
 			BigDecimal percentrounded = percent.setScale(2, BigDecimal.ROUND_HALF_DOWN);
 			if (desc == null)
-				desc = percentrounded.multiply(Env.ONEHUNDRED) + "% de factura " + invoice.getDocumentNo() + " Línea #"  + invoiceLine.getLine() + " "+  invoiceLine.getC_Charge().getName();
+				desc = percentrounded.multiply(Env.ONEHUNDRED) + "% de factura " + invoice.getDocumentNo() + " Lï¿½nea #"  + invoiceLine.getLine() + " "+  invoiceLine.getC_Charge().getName();
 			else
 				desc += " - " +  percentrounded.multiply(Env.ONEHUNDRED) + "% de " + invoice.getDocumentNo() + " " +  invoiceLine.getC_Charge().getName();
 			if (line.getDescription() != null)

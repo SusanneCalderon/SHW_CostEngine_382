@@ -19,6 +19,8 @@ package org.adempiere.process;
 import java.util.ArrayList;
 
 import org.compiere.model.MProductPrice;
+import org.compiere.util.DB;
+import org.compiere.util.Env;
 
 /** Generated Process for (CreateProductEntriesInPriceList)
  *  @author ADempiere (generated) 
@@ -38,9 +40,15 @@ public class CreateProductEntriesInPriceList extends CreateProductEntriesInPrice
 	@Override
 	protected String doIt() throws Exception
 	{
+		String sql = "select LG_Route_ID from LG_Route where ad_client_id=? and LG_Route_ID in (1000017, 1000018, 1000019)";
+		ArrayList<Object> params = new ArrayList<>();
+		params.add(Env.getAD_Client_ID(getCtx()));
+			
+		int LGRoute_ID = DB.getSQLValueEx(get_TrxName(), sql, params);
 		for(Integer key : getSelectionKeys()) {
 			MProductPrice pp = new MProductPrice(getCtx(), M_PriceListVersion_ID, key, get_TrxName());
 			if (pp != null) {
+				pp.set_ValueOfColumn("LG_Route_ID", LGRoute_ID);
 				pp.saveEx();
 			}
 			

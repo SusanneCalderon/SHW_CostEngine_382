@@ -37,6 +37,7 @@ import org.compiere.model.MAttributeSet;
 import org.compiere.model.MBPartner;
 import org.compiere.model.MBankAccount;
 import org.compiere.model.MBankStatement;
+import org.compiere.model.MBankStatementLine;
 import org.compiere.model.MCash;
 import org.compiere.model.MCashLine;
 import org.compiere.model.MClient;
@@ -61,6 +62,7 @@ import org.compiere.model.MOrderLine;
 import org.compiere.model.MOrderTax;
 import org.compiere.model.MPayment;
 import org.compiere.model.MPaymentAllocate;
+import org.compiere.model.MPaymentBatch;
 import org.compiere.model.MProduct;
 import org.compiere.model.MProductPO;
 import org.compiere.model.MProduction;
@@ -80,6 +82,7 @@ import org.compiere.model.ModelValidator;
 import org.compiere.model.PO;
 import org.compiere.model.ProductCost;
 import org.compiere.model.Query;
+import org.compiere.model.X_C_Payment;
 import org.compiere.process.DocAction;
 import org.compiere.util.CLogger;
 import org.compiere.util.DB;
@@ -566,6 +569,11 @@ public class SHWValidator_BASICSNEW implements ModelValidator
 		{
 			;
 		}
+		if (po.get_TableName().equals(MBankStatement.Table_Name))
+		{
+			if (timing == TIMING_AFTER_PREPARE)
+				error = BS_AfterPrepare(po);
+		}
 
 		if (isDocument(po))
 		{
@@ -696,7 +704,7 @@ public class SHWValidator_BASICSNEW implements ModelValidator
 			else
 				Prepayment = doc.getAccount(Doc.ACCTTYPE_V_Prepayment, as);
 			String sql = "SELECT  e_prepayment_acct FROM c_bp_employee_acct WHERE C_BPartner_ID=? AND C_AcctSchema_ID=?";
-			int C_ValidCombination_ID = DB.getSQLValueEx(null, sql,pay.getC_BPartner_ID());
+			int C_ValidCombination_ID = DB.getSQLValueEx(null, sql,pay.getC_BPartner_ID(), as.getC_AcctSchema_ID());
 			MAccount Emp_PrePayment = MAccount.get (as.getCtx(), C_ValidCombination_ID);
 			//MAccount Emp_PrePayment =  doc.getAccount(Doc.ACCTTYPE_e_prepayment_acct, as);
 			for (FactLine fline : fact.getLines())
@@ -947,11 +955,16 @@ public class SHWValidator_BASICSNEW implements ModelValidator
 			alloc.setAD_Org_ID(invoice.getAD_Org_ID());
 			alloc.saveEx();
 			BigDecimal PaymentAmt = pay.getPayAmt();
-
 			BigDecimal amount = PaymentAmt;
 			if (amount.abs().compareTo(PaymentAmt.abs()) > 0)  // if there's more open on the invoice
 				amount = PaymentAmt;							// than left in the payment
 			BigDecimal OverUnderAmt = invoice.getGrandTotal().subtract(pay.getPayAmt());
+		//	if (!pay.isReceipt())
+		//	{
+		//		amount = amount.negate();
+		//		OverUnderAmt.negate();
+		//	}
+			
 			//	Allocation Line
 			MAllocationLine aLine = new MAllocationLine (alloc, amount, 
 					Env.ZERO, Env.ZERO, OverUnderAmt);
@@ -1449,6 +1462,82 @@ public class SHWValidator_BASICSNEW implements ModelValidator
 				invoice.saveEx();
 			}
 		}
+		return "";
+	}
+	
+	private String BS_AfterPrepare(PO A_PO)
+	{
+		MBankStatement bankstatement = (MBankStatement)A_PO;
+		for (MBankStatementLine bsl:bankstatement.getLines(true))
+		{
+			if (bsl.get_ValueAsInt("C_BankAccount_ID") ==0)
+				continue;
+			if (bsl.getC_Payment_ID() !=0)
+				continue;
+        int         m_created = 0;
+        MPaymentBatch pBatch = new MPaymentBatch(A_PO.getCtx(), 0 ,  A_PO.get_TrxName());
+        String description = "Transferencia";
+        String name = "Transferencia";
+        pBatch.setName("Transferencia");
+        pBatch.saveEx();
+        MPayment paymentBankFrom = new MPayment(A_PO.getCtx(), 0 ,  A_PO.get_TrxName());
+        paymentBankFrom.setC_BankAccount_ID(bankstatement.getC_BankAccount_ID());
+        paymentBankFrom.setC_DocType_ID(false);
+        String value = DB.getDocumentNo(paymentBankFrom.getC_DocType_ID(),A_PO.get_TrxName(), false,  paymentBankFrom);
+        paymentBankFrom.setDocumentNo(value);
+       // paymentBankFrom.setDocumentNo(P_DocumentNo);
+        
+        paymentBankFrom.setDateAcct(bankstatement.getStatementDate());
+        paymentBankFrom.setDateTrx(bankstatement.getStatementDate());
+        paymentBankFrom.setTenderType(X_C_Payment.TENDERTYPE_Account);
+        paymentBankFrom.setDescription(description);
+        paymentBankFrom.setC_BPartner_ID (1000026);
+        paymentBankFrom.setC_Currency_ID(bankstatement.getC_BankAccount().getC_Currency_ID());
+       // if (P_C_ConversionType_ID > 0)
+        paymentBankFrom.setC_ConversionType_ID(114);    
+        paymentBankFrom.setPayAmt(bsl.getTrxAmt());
+        paymentBankFrom.setOverUnderAmt(Env.ZERO);
+        paymentBankFrom.setC_Charge_ID(1000456);
+        paymentBankFrom.setAD_Org_ID(bankstatement.getAD_Org_ID());
+        paymentBankFrom.setC_PaymentBatch_ID(pBatch.getC_PaymentBatch_ID());
+        paymentBankFrom.saveEx();
+        description = description + " desde" +  paymentBankFrom.getC_BankAccount().getAccountNo();
+        paymentBankFrom.processIt(MPayment.DOCACTION_Complete);
+        paymentBankFrom.saveEx();
+        
+        MPayment paymentBankTo = new MPayment(A_PO.getCtx(), 0 ,  A_PO.get_TrxName());
+        paymentBankTo.setC_BankAccount_ID(bsl.get_ValueAsInt("C_BankAccount_ID"));
+        paymentBankTo.setC_DocType_ID(true);
+        value = DB.getDocumentNo(paymentBankTo.getC_DocType_ID(),A_PO.get_TrxName(), false,  paymentBankTo);
+        paymentBankTo.setDocumentNo(value);        
+        paymentBankTo.setC_PaymentBatch_ID(pBatch.getC_PaymentBatch_ID());
+      //  paymentBankTo.setDocumentNo(P_DocumentNo);
+        paymentBankTo.setDateAcct(bankstatement.getStatementDate());
+        paymentBankTo.setDateTrx(bankstatement.getStatementDate());
+        paymentBankTo.setTenderType(X_C_Payment.TENDERTYPE_Account);
+        paymentBankTo.setDescription(description);
+        paymentBankTo.setC_BPartner_ID (1000026);
+        paymentBankTo.setC_Currency_ID(100);        
+        paymentBankFrom.setC_ConversionType_ID(114);    
+        paymentBankTo.setPayAmt(bsl.getStmtAmt());
+        paymentBankTo.setOverUnderAmt(Env.ZERO);
+        paymentBankTo.setC_Charge_ID(1000456);
+        paymentBankTo.setAD_Org_ID(bankstatement.getAD_Org_ID());
+        paymentBankTo.saveEx();
+        description = description + " a " +  paymentBankTo.getC_BankAccount().getAccountNo();
+        paymentBankTo.processIt(MPayment.DOCACTION_Complete);
+        paymentBankTo.saveEx();
+        
+        pBatch.setName(description);        
+        description = description + " Monto:" +  paymentBankTo.getPayAmt();
+        pBatch.set_ValueOfColumn("Description", description);
+        pBatch.setProcessingDate(bankstatement.getStatementDate());
+        pBatch.saveEx();
+        bsl.setPayment(paymentBankFrom);
+        bsl.saveEx();
+        m_created++;  
+		}      
+    
 		return "";
 	}
 	

@@ -164,14 +164,10 @@ public class CalloutSHW extends CalloutEngine
 
 	public String DT_Org (Properties ctx, int WindowNo, GridTab mTab, GridField mField, Object value)
 	{	
-		/*Integer c_invoicebatch_ID = (Integer)value;
-		 
-		if (c_invoicebatch_ID == null || c_invoicebatch_ID.intValue() == 0)
-			return "";
-		MInvoiceBatch quedan = new MInvoiceBatch(Env.getCtx(), c_invoicebatch_ID, null);
-		
-		mTab.setValue(MInvoiceLine.COLUMNNAME_PriceEntered,  quedan.getDocumentAmt());*/
-		Integer c_invoicebatch_ID = (Integer)value;
+		//import org.compiere.model.MBPartner;
+		//import org.compiere.util.Env;
+
+       
 		return "";
 	}
 	

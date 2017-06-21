@@ -21,6 +21,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.Properties;
 import java.util.logging.Level;
 
@@ -30,6 +31,7 @@ import org.compiere.util.DisplayType;
 import org.compiere.util.Env;
 import org.compiere.util.Ini;
 import org.compiere.util.Msg;
+import org.eevolution.model.X_C_TaxDefinition;
 
 /**
  *	Order Callouts.
@@ -326,7 +328,7 @@ public class CalloutOrder extends CalloutEngine
 				if (C_BPartner_ID.toString().equals(Env.getContext(ctx, WindowNo, Env.TAB_INFO, "C_BPartner_ID")))
 				{
 					String loc = Env.getContext(ctx, WindowNo, Env.TAB_INFO, "C_BPartner_Location_ID");
-					if (loc.length() > 0)
+					if (loc.length() > 0 && !loc.equals("0"))
 						shipTo_ID = Integer.parseInt(loc);
 				}
 				if (shipTo_ID == 0)
@@ -339,7 +341,7 @@ public class CalloutOrder extends CalloutEngine
 				if (C_BPartner_ID.toString().equals(Env.getContext(ctx, WindowNo, Env.TAB_INFO, "C_BPartner_ID")))
 				{
 					String cont = Env.getContext(ctx, WindowNo, Env.TAB_INFO, "AD_User_ID");
-					if (cont.length() > 0)
+					if (cont.length() > 0 && !cont.equals("0"))
 						contID = Integer.parseInt(cont);
 				}
 				if (contID == 0)
@@ -733,7 +735,7 @@ public class CalloutOrder extends CalloutEngine
 		int C_BPartner_ID = Env.getContextAsInt(ctx, WindowNo, "C_BPartner_ID");
 		BigDecimal Qty = (BigDecimal)mTab.getValue("QtyOrdered");
 		boolean IsSOTrx = Env.getContext(ctx, WindowNo, "IsSOTrx").equals("Y");
-		MProductPricing pp = new MProductPricing (M_Product_ID.intValue(), C_BPartner_ID, Qty, IsSOTrx, null);
+		MProductPricing pp = new MProductPricing (M_Product_ID.intValue(), C_BPartner_ID, Qty, IsSOTrx,null);
 		//
 		int M_PriceList_ID = Env.getContextAsInt(ctx, WindowNo, "M_PriceList_ID");
 		pp.setM_PriceList_ID(M_PriceList_ID);
@@ -815,7 +817,7 @@ public class CalloutOrder extends CalloutEngine
 		}
 		//
 		if (steps) log.warning("fini");
-		return tax (ctx, WindowNo, mTab, mField, value);
+		return taxDefinition (ctx, WindowNo, mTab, mField, value);
 	}	//	product
 
 	/**
@@ -873,9 +875,9 @@ public class CalloutOrder extends CalloutEngine
 			DB.close(rs, pstmt);
 			rs = null; pstmt = null;
 		}
-
+ 
 		//
-		return tax (ctx, WindowNo, mTab, mField, value);
+		return taxDefinition(ctx, WindowNo, mTab, mField, value);
 	}	//	charge
 
 
@@ -975,6 +977,9 @@ public class CalloutOrder extends CalloutEngine
 		if (isCalloutActive() || value == null)
 			return "";
 
+		//SHW
+		if (Env.getContextAsInt(ctx, "LG_ProductPriceRate_ID ") > 0)
+			return "";
 		if (steps) log.warning("init");
 		int C_UOM_To_ID = Env.getContextAsInt(ctx, WindowNo, "C_UOM_ID");
 		int M_Product_ID = Env.getContextAsInt(ctx, WindowNo, "M_Product_ID");
@@ -1086,10 +1091,10 @@ public class CalloutOrder extends CalloutEngine
 		//	calculate Discount
 		else
 		{
-			if (PriceList.compareTo(Env.ZERO) ==0)
+			if (PriceList.intValue() == 0)
 				Discount = Env.ZERO;
-			//else
-			//	Discount = new BigDecimal ((PriceList.doubleValue() - PriceActual.doubleValue()) / PriceList.doubleValue() * 100.0);
+			else
+				Discount = new BigDecimal ((PriceList.doubleValue() - PriceActual.doubleValue()) / PriceList.doubleValue() * 100.0);
 			if (Discount.scale() > 2)
 				Discount = Discount.setScale(2, BigDecimal.ROUND_HALF_UP);
 			mTab.setValue("Discount", Discount);
@@ -1115,7 +1120,7 @@ public class CalloutOrder extends CalloutEngine
 			mTab.setValue ("PriceEntered", PriceEntered);
 			mTab.fireDataStatusEEvent ("UnderLimitPrice", "", false);
 			//	Repeat Discount calc
-			if (PriceList.compareTo(Env.ZERO)!=0)
+			if (PriceList.intValue() != 0)
 			{
 				Discount = new BigDecimal ((PriceList.doubleValue () - PriceActual.doubleValue ()) / PriceList.doubleValue () * 100.0);
 				if (Discount.scale () > 2)
@@ -1148,6 +1153,9 @@ public class CalloutOrder extends CalloutEngine
 	public String qty (Properties ctx, int WindowNo, GridTab mTab, GridField mField, Object value)
 	{
 		if (isCalloutActive() || value == null)
+			return "";
+		//SHW
+		if (Env.getContextAsInt(ctx, "LG_ProductPriceRate_ID ") > 0)
 			return "";
 		int M_Product_ID = Env.getContextAsInt(ctx, WindowNo, "M_Product_ID");
 		if (steps) log.warning("init - M_Product_ID=" + M_Product_ID + " - " );
@@ -1291,6 +1299,86 @@ public class CalloutOrder extends CalloutEngine
 		//
 		return "";
 	}	//	qty
+
+	public String taxDefinition (Properties ctx, int WindowNo, GridTab mTab, GridField mField, Object value)
+	{
+		//import org.compoere.model.MProduct;
+		//import org.compoere.model.MBPartner;
+		//import org.compoere.model.MCharge;
+		//import org.compoere.model.X_C_TaxDefinition;
+		//import org.compoere.model.Query;
+
+		//import java.util.ArrayList;
+		String column = mField.getColumnName();
+		if (value == null)
+			return "";
+		if (steps) log.warning("init");
+		
+		//	Check Product
+		int M_Product_ID = 0;
+		if (column.equals("M_Product_ID"))
+			M_Product_ID = ((Integer)value).intValue();
+		else
+			M_Product_ID = Env.getContextAsInt(ctx, WindowNo, "M_Product_ID");
+		int C_Charge_ID = 0;
+		if (column.equals("C_Charge_ID"))
+			C_Charge_ID = ((Integer)value).intValue();
+		else
+			C_Charge_ID = Env.getContextAsInt(ctx, WindowNo, "C_Charge_ID");
+		log.fine("Product=" + M_Product_ID + ", C_Charge_ID=" + C_Charge_ID);
+		if (M_Product_ID == 0 && C_Charge_ID == 0)
+			return amt(ctx, WindowNo, mTab, mField, value);		//
+
+	    ArrayList<Object> params = new ArrayList<Object>();
+		//	Check Partner Location
+		String whereClause = "(c_taxgroup_ID =? or c_taxgroup_ID is null)";
+		int	shipC_BPartner = Env.getContextAsInt(ctx, WindowNo, "C_BPartner_ID");
+		MBPartner bpartner = new MBPartner(Env.getCtx(), shipC_BPartner, null);
+		params.add(bpartner.getC_TaxGroup_ID());
+		if (C_Charge_ID != 0)
+		{
+			MCharge charge = new MCharge(ctx, C_Charge_ID, null);
+			whereClause = whereClause + " AND (c_taxcategory_ID =? or c_taxcategory_ID is null)";
+			params.add(charge.getC_TaxCategory_ID());
+		}
+		else if (M_Product_ID != 0)
+		{
+			MProduct product = new MProduct(ctx, M_Product_ID, null);
+			whereClause = whereClause + " AND (c_taxcategory_ID =? or c_taxcategory_ID is null)";
+			params.add(product.getC_TaxCategory_ID());
+		}
+		X_C_TaxDefinition taxdefinition = new Query(Env.getCtx(), X_C_TaxDefinition.Table_Name, whereClause, null)
+			.setClient_ID()
+			.setOnlyActiveRecords(true)
+			.setParameters(params)
+			.setOrderBy("seqNo")
+			.first();
+		if (taxdefinition == null || taxdefinition.getC_Tax_ID() == 0)
+			mTab.fireDataStatusEEvent(CLogger.retrieveError());
+		else
+			mTab.setValue("C_Tax_ID", new Integer(taxdefinition.getC_Tax_ID()));
+		//
+		if (steps) log.warning("fini");
+		return amt(ctx, WindowNo, mTab, mField, value);
+	}
+	
+	public String location (Properties ctx, int WindowNo, GridTab mTab, GridField mField, Object value)
+	{
+
+		Integer C_BPartnerLocation_ID = (Integer)value;
+		if (C_BPartnerLocation_ID == null || C_BPartnerLocation_ID.intValue() == 0)
+			return "";
+		String sql = "select c_country_ID from c_bpartner_location bpl " +
+					" inner join c_location l on bpl.c_location_ID = l.c_location_ID " +
+					" where bpl.c_bpartner_location_ID = ?";
+		int c_country_ID = DB.getSQLValueEx(null, sql, C_BPartnerLocation_ID);
+		if (c_country_ID != 0 && c_country_ID != 173)
+
+			mTab.setValue("C_DoctypeTarget_ID", 2000001);
+		else 
+			mTab.setValue("C_DoctypeTarget_ID", 1000053);
+		return "";
+	}
 	
 }	//	CalloutOrder
 

@@ -14,16 +14,14 @@
  * ComPiere, Inc., 2620 Augustine Dr. #245, Santa Clara, CA 95054, USA        *
  * or via info@compiere.org or http://www.compiere.org/license.html           *
  *****************************************************************************/
-package org.shw.process;
+package org.compiere.process;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
-import java.util.List;
 import java.util.logging.Level;
 
 import org.compiere.model.MCommission;
@@ -32,10 +30,7 @@ import org.compiere.model.MCommissionDetail;
 import org.compiere.model.MCommissionLine;
 import org.compiere.model.MCommissionRun;
 import org.compiere.model.MCurrency;
-import org.compiere.model.MUser;import org.compiere.model.Query;
-import org.compiere.process.ProcessInfoParameter;
-import org.compiere.process.SvrProcess;
-
+import org.compiere.model.MUser;
 import org.compiere.util.AdempiereSystemError;
 import org.compiere.util.AdempiereUserError;
 import org.compiere.util.DB;
@@ -48,15 +43,12 @@ import org.compiere.util.Language;
  *  @author Jorg Janke
  *  @version $Id: CommissionCalc.java,v 1.3 2006/09/25 00:59:41 jjanke Exp $
  */
-public class SHW_CommissionCalc extends SvrProcess
+public class CommissionCalc extends SvrProcess
 {
 	private Timestamp		p_StartDate;
 	//
-	private Timestamp		p_EndDate;
+	private Timestamp		m_EndDate;
 	private MCommission		m_com;
-	private Boolean			p_includeVoid = false;
-	private String 			m_docstatus = "('CO', 'CL')";
-	private Boolean			p_reset = false;
 	//
 
 	/**
@@ -64,24 +56,14 @@ public class SHW_CommissionCalc extends SvrProcess
 	 */
 	protected void prepare()
 	{
-        ProcessInfoParameter[] parameters = getParameter();
-		for (ProcessInfoParameter parameter : parameters) {
-            String name = parameter.getParameterName();
-            if (parameter.getParameter() == null)
-                ;
-            if (name.equals("StartDate"))
-            {
-            	p_StartDate = parameter.getParameterAsTimestamp();
-            	p_EndDate   = parameter.getParameterToAsTimestamp();
-            }
-            if (name.equals("IncludeVoid"))
-            	p_includeVoid = parameter.getParameterAsBoolean();
-            
-			/*String name = para[i].getParameterName();
+		ProcessInfoParameter[] para = getParameter();
+		for (int i = 0; i < para.length; i++)
+		{
+			String name = para[i].getParameterName();
 			if (para[i].getParameter() == null)
 				;
 			else if (name.equals("StartDate"))
-				p_StartDate = (Timestamp)para[i].getParameter();*/
+				p_StartDate = (Timestamp)para[i].getParameter();
 			else
 				log.log(Level.SEVERE, "Unknown Parameter: " + name);
 		}
@@ -94,8 +76,6 @@ public class SHW_CommissionCalc extends SvrProcess
 	 */
 	protected String doIt() throws Exception
 	{
-		if (p_includeVoid)
-			m_docstatus = "('CO', 'CL', 'VO', 'RE')";
 		log.info("C_Commission_ID=" + getRecord_ID() + ", StartDate=" + p_StartDate);
 		if (p_StartDate == null)
 			p_StartDate = new Timestamp (System.currentTimeMillis());
@@ -103,33 +83,14 @@ public class SHW_CommissionCalc extends SvrProcess
 		if (m_com.get_ID() == 0)
 			throw new AdempiereUserError ("No Commission");
 			
-		//	Create Commission
-		String whereClause = "C_Commission_ID=? and StartDate=?";
-		ArrayList< Object> params = new ArrayList<>();
-		params.add(m_com.getC_Commission_ID());
-		params.add(p_StartDate);
-		MCommissionRun comRun = new Query(getCtx(), MCommissionRun.Table_Name, whereClause, get_TrxName())
-			.setParameters(params)
-			.first();
-		if (comRun == null)
-			comRun = new MCommissionRun (m_com);
-		
-		if (p_EndDate == null)
-			setStartEndDate();
-		
-		comRun.setStartDate(p_StartDate);	
-		if (p_reset && comRun.getC_CommissionRun_ID() !=0)
-		{
-			List<MCommissionAmt> camts = new Query(getCtx(), MCommissionAmt.Table_Name, "c_commissionrun_ID=?", get_TrxName())
-				.setParameters(comRun.getC_CommissionRun_ID())
-				.list();
-			for(MCommissionAmt camt:camts)
-				camt.deleteEx(true);
-		}	
+		//	Create Commission	
+		MCommissionRun comRun = new MCommissionRun (m_com);
+		setStartEndDate();
+		comRun.setStartDate(p_StartDate);		
 		//	01-Jan-2000 - 31-Jan-2001 - USD
 		SimpleDateFormat format = DisplayType.getDateFormat(DisplayType.Date);
 		String description = format.format(p_StartDate) 
-			+ " - " + format.format(p_EndDate)
+			+ " - " + format.format(m_EndDate)
 			+ " - " + MCurrency.getISO_Code(getCtx(), m_com.getC_Currency_ID());
 		comRun.setDescription(description);
 		if (!comRun.save())
@@ -156,10 +117,8 @@ public class SHW_CommissionCalc extends SvrProcess
 						+ " INNER JOIN C_AllocationLine al ON (p.C_Payment_ID=al.C_Payment_ID)"
 						+ " INNER JOIN C_Invoice h ON (al.C_Invoice_ID = h.C_Invoice_ID)"
 						+ " INNER JOIN C_InvoiceLine l ON (h.C_Invoice_ID = l.C_Invoice_ID) "
-						+ " left JOIN c_orderline ol on l.c_orderline_ID = ol.c_orderline_ID "
-						+ " left join c_order o on ol.c_order_ID = o.c_order_ID "
 						+ " LEFT OUTER JOIN M_Product prd ON (l.M_Product_ID = prd.M_Product_ID) "
-						+ " WHERE p.DocStatus IN ('CO','CL')" 
+						+ "WHERE p.DocStatus IN ('CL','CO','RE')"
 						+ " AND h.IsSOTrx='Y'"
 						+ " AND p.AD_Client_ID = ?"
 						+ " AND p.DateTrx BETWEEN ? AND ?");
@@ -215,11 +174,9 @@ public class SHW_CommissionCalc extends SvrProcess
 						+ "NULL, l.C_InvoiceLine_ID, h.DocumentNo,"
 						+ " COALESCE(prd.Value,l.Description),h.DateInvoiced "
 						+ "FROM C_Invoice h"
-						+ " INNER JOIN rv_c_invoiceline l ON (h.C_Invoice_ID = l.C_Invoice_ID)"
+						+ " INNER JOIN C_InvoiceLine l ON (h.C_Invoice_ID = l.C_Invoice_ID)"
 						+ " LEFT OUTER JOIN M_Product prd ON (l.M_Product_ID = prd.M_Product_ID) "
-						//+ " left JOIN c_orderline ol on l.c_orderline_ID = ol.c_orderline_ID "
-						//+ " left join c_order o on ol.c_order_ID = o.c_order_ID "
-						+ " WHERE h.DocStatus IN  " + m_docstatus
+						+ "WHERE h.DocStatus IN ('CL','CO','RE')"
 						+ " AND h.IsSOTrx='Y'"
 						+ " AND h.AD_Client_ID = ?"
 						+ " AND h.DateInvoiced BETWEEN ? AND ?");
@@ -231,9 +188,7 @@ public class SHW_CommissionCalc extends SvrProcess
 						+ "NULL, NULL, NULL, NULL, MAX(h.DateInvoiced) "
 						+ "FROM C_Invoice h"
 						+ " INNER JOIN C_InvoiceLine l ON (h.C_Invoice_ID = l.C_Invoice_ID) "
-						+ " left JOIN c_orderline ol on l.c_orderline_ID = ol.c_orderline_ID "
-						+ " left join c_order o on ol.c_order_ID = o.c_order_ID "
-						+ "WHERE h.DocStatus IN " + m_docstatus
+						+ "WHERE h.DocStatus IN ('CL','CO','RE')"
 						+ " AND h.IsSOTrx='Y'"
 						+ " AND h.AD_Client_ID = ?"
 						+ " AND h.DateInvoiced BETWEEN ? AND ?");
@@ -248,7 +203,7 @@ public class SHW_CommissionCalc extends SvrProcess
 				if (users.length == 1)
 				{
 					int SalesRep_ID = users[0].getAD_User_ID();
-					sql.append(" AND coalesce(l.salesrep_ID, h.salesrep_ID) =").append(SalesRep_ID);
+					sql.append(" AND h.SalesRep_ID=").append(SalesRep_ID);
 				}
 				else
 				{
@@ -288,14 +243,8 @@ public class SHW_CommissionCalc extends SvrProcess
 			//
 			log.fine("Line=" + lines[i].getLine() + " - " + sql);
 			//
-			sql.append(" and c_invoiceline_ID not in (select c_invoiceline_ID from c_commissiondetail cd" );
-			sql.append(" inner join C_CommissionAmt ca on cd.C_CommissionAmt_ID = ca.C_CommissionAmt_ID ");
-			sql.append(" inner join c_commissionrun cr on ca.c_commissionrun_ID = cr.c_commissionrun_ID ");
-			sql.append(" where cr.c_commission_ID = " + m_com.getC_Commission_ID());
-			sql.append(" and cr.startdate = " + DB.TO_DATE(p_StartDate) + ")" );
-							
 			createDetail(sql.toString(), comAmt);
-			comAmt.updateCommissionAmount(); 
+			comAmt.updateCommissionAmount();
 			comAmt.saveEx();
 		}	//	for all commission lines
 		
@@ -329,7 +278,7 @@ public class SHW_CommissionCalc extends SvrProcess
 			//
 			cal.add(Calendar.YEAR, 1);
 			cal.add(Calendar.DAY_OF_YEAR, -1); 
-			p_EndDate = new Timestamp (cal.getTimeInMillis());
+			m_EndDate = new Timestamp (cal.getTimeInMillis());
 			
 		}
 		//	Quarterly
@@ -349,7 +298,7 @@ public class SHW_CommissionCalc extends SvrProcess
 			//
 			cal.add(Calendar.MONTH, 3);
 			cal.add(Calendar.DAY_OF_YEAR, -1); 
-			p_EndDate = new Timestamp (cal.getTimeInMillis());
+			m_EndDate = new Timestamp (cal.getTimeInMillis());
 		}
 		//	Weekly
 		else if (MCommission.FREQUENCYTYPE_Weekly.equals(m_com.getFrequencyType()))
@@ -358,39 +307,19 @@ public class SHW_CommissionCalc extends SvrProcess
 			p_StartDate = new Timestamp (cal.getTimeInMillis());
 			//
 			cal.add(Calendar.DAY_OF_YEAR, 7); 
-			p_EndDate = new Timestamp (cal.getTimeInMillis());
+			m_EndDate = new Timestamp (cal.getTimeInMillis());
 		}
 		//	Monthly
-		else if (MCommission.FREQUENCYTYPE_Monthly.equals(m_com.getFrequencyType()))
+		else
 		{
 			cal.set(Calendar.DAY_OF_MONTH, 1);
 			p_StartDate = new Timestamp (cal.getTimeInMillis());
 			//
 			cal.add(Calendar.MONTH, 1);
 			cal.add(Calendar.DAY_OF_YEAR, -1); 
-			p_EndDate = new Timestamp (cal.getTimeInMillis());
+			m_EndDate = new Timestamp (cal.getTimeInMillis());
 		}
-		
-		else 
-		{
-			if (cal.get(Calendar.DAY_OF_MONTH) <= 15)
-			{
-				cal.set(Calendar.DAY_OF_MONTH, 1);
-				p_StartDate = new Timestamp (cal.getTimeInMillis()); 
-				cal.add(Calendar.DAY_OF_YEAR, 15); 
-				cal.add(Calendar.MONTH, 1);
-				cal.add(Calendar.DAY_OF_YEAR, -1); 
-				p_EndDate = new Timestamp (cal.getTimeInMillis());
-			}
-			else
-			{
-				cal.set(Calendar.DAY_OF_MONTH, 15);
-				p_StartDate = new Timestamp (cal.getTimeInMillis()); 
-				cal.add(Calendar.DAY_OF_YEAR, 15); 
-				p_EndDate = new Timestamp (cal.getTimeInMillis()); 
-			}
-		}
-		log.fine("setStartEndDate = " + p_StartDate + " - " + p_EndDate);
+		log.fine("setStartEndDate = " + p_StartDate + " - " + m_EndDate);
 		
 		/**
 		String sd = DB.TO_DATE(p_StartDate, true);
@@ -420,7 +349,7 @@ public class SHW_CommissionCalc extends SvrProcess
 			pstmt = DB.prepareStatement(sql, get_TrxName());
 			pstmt.setInt(1, m_com.getAD_Client_ID());
 			pstmt.setTimestamp(2, p_StartDate);
-			pstmt.setTimestamp(3, p_EndDate);
+			pstmt.setTimestamp(3, m_EndDate);
 			rs = pstmt.executeQuery();
 			while (rs.next())
 			{

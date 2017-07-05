@@ -774,7 +774,7 @@ public class SHWValidator_BASICSNEW implements ModelValidator
 					if (isEmployee)
 					{
 						String sql = "SELECT  e_prepayment_acct FROM c_bp_employee_acct WHERE C_BPartner_ID=? AND C_AcctSchema_ID=?";
-						int C_ValidCombination_ID = DB.getSQLValueEx(null, sql,pay.getC_BPartner_ID());
+						int C_ValidCombination_ID = DB.getSQLValueEx(null, sql,pay.getC_BPartner_ID(), as.getC_AcctSchema_ID());
 						Emp_PrePayment = MAccount.get (as.getCtx(), C_ValidCombination_ID);
 					}
 

@@ -18,31 +18,14 @@
 package org.shw.process;
 
 import java.math.BigDecimal;
-import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
-import org.compiere.model.I_C_DocType;
-import org.compiere.model.MAllocationHdr;
-import org.compiere.model.MAllocationLine;
-import org.compiere.model.MAttributeSet;
-import org.compiere.model.MBankStatement;
-import org.compiere.model.MClient;
-import org.compiere.model.MInvoice;
-import org.compiere.model.MOrderLine;
-import org.compiere.model.MPayment;
-import org.compiere.model.MPaymentAllocate;
-import org.compiere.model.MProduct;
-import org.compiere.model.MRequisitionLine;
-import org.compiere.model.MStorage;
-import org.compiere.model.Query;
-import org.compiere.process.DocAction;
-import org.compiere.process.ProcessInfo;
 import org.compiere.process.ProcessInfoParameter;
 import org.compiere.process.SvrProcess;
 import org.compiere.util.DB;
 import org.compiere.util.Env;
-import org.compiere.util.Msg;
 
 
 
@@ -76,11 +59,16 @@ public class Template  extends SvrProcess
     @Override
     protected String doIt() throws Exception
     {
-    	/*List<Integer> c_payment_IDs = getSelectionKeys();
+    	List<Integer> c_payment_IDs = getSelectionKeys();
     	String A_TrxName = get_TrxName();
     	Properties A_Ctx = getCtx();
     	int A_AD_PInstance_ID = getAD_PInstance_ID();
-    	ProcessInfo
+    	int A_Record_ID = getRecord_ID();
+    	String sql = "Update c_payment set docstatus = 'CO', docaction = 'CL' where c_payment_ID = ?";
+    	ArrayList<Object> params = new ArrayList<Object>();
+    	params.add(A_Record_ID);
+    	DB.executeUpdateEx(sql, params.toArray(), A_TrxName);
+    	/*ProcessInfo
     	String whereClause = "EXISTS (SELECT T_Selection_ID FROM T_Selection WHERE  T_Selection.AD_PInstance_ID=? " +
                 " AND T_Selection.T_Selection_ID=c_Invoice.C_Invoice_ID)";
         m_records = new Query(A_Ctx, MInvoice.Table_Name, whereClause, A_TrxName)
